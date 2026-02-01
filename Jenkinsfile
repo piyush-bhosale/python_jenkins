@@ -25,7 +25,6 @@ pipeline {
       steps {
         sh '''
           set -eux
-          . /home/jenkins/pyenv/bin/activate
           pytest -q
         '''
       }
