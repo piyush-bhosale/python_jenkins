@@ -25,6 +25,7 @@ pipeline {
       steps {
         sh '''
           set -eux
+          . .venv/bin/activate
           pytest -q
         '''
       }
