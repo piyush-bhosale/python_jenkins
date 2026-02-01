@@ -12,14 +12,11 @@ pipeline {
       steps {
         sh '''
           set -eux
-          . /home/jenkins/pyenv/bin/activate
-          python --version
-          pip --version
-          pip install -U pip
-
-          # install dependencies if files exist
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
           [ -f requirement.txt ] && pip install -r requirement.txt || true
-          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || true
+          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || t
         '''
       }
     }
