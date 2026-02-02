@@ -3,6 +3,7 @@ pipeline {
 
   options {
     timestamps()
+    skipDefaultCheckout(true)
   }
 
   stages {
@@ -14,19 +15,19 @@ pipeline {
 
     stage('Setup Python') {
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
           python3 -m venv .venv
-          . .venv/bin/activate
+          source .venv/bin/activate
 
           python -m pip install --upgrade pip wheel setuptools
 
           # Install dependencies if present
-          [ -f requirements.txt ] && pip install -r requirements.txt || true
-          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || true
+          [[ -f requirements.txt ]] && pip install -r requirements.txt || true
+          [[ -f requirements-dev.txt ]] && pip install -r requirements-dev.txt || true
 
-          # Install your repo as package (requires pyproject.toml or setup.py)
+          # Install your repo as a package (requires pyproject.toml or setup.py)
           pip install -e .
         '''
       }
@@ -34,9 +35,9 @@ pipeline {
 
     stage('Run Tests') {
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set -euxo pipefail
-          . .venv/bin/activate
+          source .venv/bin/activate
 
           pytest -q --junitxml=report.xml --cov=. --cov-report=xml
         '''
@@ -45,9 +46,9 @@ pipeline {
 
     stage('Python Quality Stack') {
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set -euxo pipefail
-          . .venv/bin/activate
+          source .venv/bin/activate
 
           echo "=============================="
           echo "1) Ruff Lint"
