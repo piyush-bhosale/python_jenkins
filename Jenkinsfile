@@ -113,7 +113,6 @@ pipeline {
                           -Dsonar.tests=tests \
                           -Dsonar.python.coverage.reportPaths=coverage.xml \
                           -Dsonar.junit.reportPaths=report.xml \
-                          -Dsonar.host.url=http://52.66.12.73:9000 \
                           -Dsonar.login=${SONAR_TOKEN}
                         '''
                 }
