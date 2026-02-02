@@ -38,6 +38,8 @@ pipeline {
           set -eux
           . .venv/bin/activate
           echo "Running Ruff Linting..."
+          python -m ruff --version
+          python -m ruff check
           ruff check .
     '''
   }
