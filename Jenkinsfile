@@ -9,7 +9,7 @@ pipeline {
     environment {
         // Optional: If you store token in Jenkins credentials as Secret Text with ID 'sonarqube-token'
         // This makes $SONAR_TOKEN available in the shell.
-        SONAR_TOKEN = credentials('sonarqube-token')
+        SONAR_TOKEN = credentials('SonarQube2')
     }
 
     stages {
