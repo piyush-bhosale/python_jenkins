@@ -32,5 +32,16 @@ pipeline {
         '''
       }
     }
+    stage('Lint Code') {
+      steps {
+        sh '''
+          set -eux
+          . .venv/bin/activate
+          echo "Running Ruff Linting..."
+          ruff check .
+    '''
+  }
+  }
+    
   }
 }
