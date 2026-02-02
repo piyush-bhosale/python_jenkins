@@ -108,7 +108,6 @@ pipeline {
                         sonar-scanner \
                           -Dsonar.projectKey=python_jenkins \
                           -Dsonar.projectName=python_jenkins \
-                          -Dsonar.branch.name=main \
                           -Dsonar.sources=app \
                           -Dsonar.tests=tests \
                           -Dsonar.python.coverage.reportPaths=coverage.xml \
