@@ -6,6 +6,12 @@ pipeline {
     skipDefaultCheckout(true)
   }
 
+  environment {
+    // Optional: If you store token in Jenkins credentials as Secret Text with ID 'sonarqube-token'
+    // This makes $SONAR_TOKEN available in the shell.
+    SONAR_TOKEN = credentials('sonarqube-token')
+  }
+
   stages {
     stage('Checkout Code') {
       steps {
@@ -58,7 +64,7 @@ pipeline {
 
           echo "=============================="
           echo "2) Ruff Format Check"
-          echo "=============================="          
+          echo "=============================="
           python -m ruff format .
           python -m ruff format --check .
 
@@ -88,6 +94,36 @@ pipeline {
           echo "✅ Quality checks completed"
           echo "=============================="
         '''
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        // This uses the SonarQube server configured in Jenkins: Manage Jenkins -> System -> SonarQube servers
+        withSonarQubeEnv('SonarQube') {
+          sh '''#!/usr/bin/env bash
+            set -euxo pipefail
+
+            # If sonar-scanner is installed via Jenkins tool config, it should be on PATH.
+            # Otherwise, you can call it using tool('SonarScanner') approach.
+            sonar-scanner \
+              -Dsonar.projectKey=python_jenkins \
+              -Dsonar.sources=app \
+              -Dsonar.tests=tests \
+              -Dsonar.python.coverage.reportPaths=coverage.xml \
+              -Dsonar.junit.reportPaths=report.xml \
+              -Dsonar.host.url=http://YOUR-SONARQUBE-IP:9000 \
+              -Dsonar.login=${SONAR_TOKEN}
+          '''
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
+        }
       }
     }
   }
