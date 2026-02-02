@@ -18,7 +18,7 @@ pipeline {
           [ -f requirement.txt ] && pip install -r requirement.txt || true
           [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || t
           # IMPORTANT: install your repo as a package
-          pip install -e 
+          pip install -e .
         '''
       }
     }
