@@ -7,7 +7,6 @@ pipeline {
     }
 
     environment {
-        // Optional: If you store token in Jenkins credentials as Secret Text with ID 'sonarqube-token'
         // This makes $SONAR_TOKEN available in the shell.
         SONAR_TOKEN = credentials('SonarQube2')
     }
@@ -100,7 +99,7 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 // This uses the SonarQube server configured in Jenkins: Manage Jenkins -> System -> SonarQube servers
-                withSonarQubeEnv('SonarQube') {
+                withSonarQubeEnv('SonarQube_Server') {
                     sh '''#!/usr/bin/env bash
                         set -euxo pipefail
 
