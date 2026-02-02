@@ -3,116 +3,103 @@ pipeline {
 
   options {
     timestamps()
+    ansiColor('xterm')
   }
 
   stages {
-
     stage('Checkout Code') {
       steps {
         checkout scm
       }
     }
 
-    stage('Init Folders') {
+    stage('Setup Python') {
       steps {
-        sh '''#!/usr/bin/env bash
-set -euo pipefail
+        sh '''
+          set -euxo pipefail
 
-rm -rf logs reports || true
-mkdir -p logs reports
-echo "[INFO] logs/ and reports/ prepared"
-'''
+          python3 -m venv .venv
+          . .venv/bin/activate
+
+          python -m pip install --upgrade pip wheel setuptools
+
+          # Install dependencies if present
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
+          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || true
+
+          # IMPORTANT: install your repo as a package (needs pyproject.toml or setup.py)
+          pip install -e .
+        '''
       }
     }
 
-    stage('Setup Python') {
+    stage('Run Tests') {
       steps {
-        sh '''#!/usr/bin/env bash
-set -euo pipefail
+        sh '''
+          set -euxo pipefail
+          . .venv/bin/activate
 
-{
-  echo "[INFO] Creating venv"
-  python3 -m venv .venv
-  source .venv/bin/activate
-
-  echo "[INFO] Upgrading pip"
-  python -m pip install --upgrade pip
-
-  echo "[INFO] Installing runtime deps if present"
-  [[ -f requirements.txt ]] && pip install -r requirements.txt || true
-
-  echo "[INFO] Installing dev deps if present"
-  [[ -f requirements-dev.txt ]] && pip install -r requirements-dev.txt || true
-
-  echo "[INFO] Installing project (editable)"
-  pip install -e .
-
-  echo "[INFO] Setup Python completed"
-} > logs/00_setup_python.log 2>&1
-
-echo "[INFO] Setup log saved: logs/00_setup_python.log"
-'''
+          # Create reports even if failures happen later
+          pytest -q --junitxml=report.xml --cov=. --cov-report=xml
+        '''
       }
     }
 
     stage('Python Quality Stack') {
       steps {
-        sh '''#!/usr/bin/env bash
-set -euo pipefail
-source .venv/bin/activate
+        sh '''
+          set -euxo pipefail
+          . .venv/bin/activate
 
-run_step () {
-  local name="$1"
-  local logfile="$2"
-  shift 2
+          echo "=============================="
+          echo "1) Ruff Lint"
+          echo "=============================="
+          python -m ruff --version
+          python -m ruff check .
 
-  echo "[INFO] Running: ${name}"
-  "$@" > "${logfile}" 2>&1 || {
-    echo "[ERROR] ${name} failed. See ${logfile}"
-    exit 1
+          echo "=============================="
+          echo "2) Ruff Format Check (recommended)"
+          echo "=============================="
+          python -m ruff format --check .
+
+          echo "=============================="
+          echo "3) Black Format Check (optional)"
+          echo "=============================="
+          python -m black --version
+          python -m black --check .
+
+          echo "=============================="
+          echo "4) Mypy Type Checking (optional)"
+          echo "=============================="
+          python -m mypy --ignore-missing-imports .
+
+          echo "=============================="
+          echo "5) Bandit Security Scan (Python SAST)"
+          echo "=============================="
+          python -m bandit -r . -ll
+
+          echo "=============================="
+          echo "6) pip-audit (Dependency Vulnerability Scan)"
+          echo "=============================="
+          # Ensure pip-audit is installed (commonly in dev requirements)
+          python -m pip install -q pip-audit || true
+          pip-audit || true
+
+          echo "=============================="
+          echo "✅ All Python quality checks completed"
+          echo "=============================="
+        '''
+      }
+    }
   }
-  echo "[INFO] ${name} OK. Log: ${logfile}"
-}
 
-# 1) Ruff Lint
-run_step "Ruff Lint" "logs/01_ruff_lint.log" \
-  python -m ruff check .
+  post {
+    always {
+      // Publish JUnit even if tests fail
+      junit allowEmptyResults: true, testResults: 'report.xml'
 
-# 2) Ruff Format Check (STRICT)
-run_step "Ruff Format Check" "logs/02_ruff_format_check.log" \
-  python -m ruff format --check .
-
-# 3) Black Format Check (optional)
-run_step "Black Check" "logs/03_black_check.log" \
-  python -m black --check .
-
-# 4) Mypy Type Check
-run_step "Mypy Type Check" "logs/04_mypy.log" \
-  python -m mypy --ignore-missing-imports .
-
-# 5) Bandit (scan only your source folder)
-# Your repo earlier showed app/main.py, so app is correct.
-run_step "Bandit Scan" "logs/05_bandit.log" \
-  python -m bandit -r app -ll -f json -o reports/bandit.json
-
-# 6) pip-audit (dependency vulnerabilities)
-run_step "pip-audit Scan" "logs/06_pip_audit.log" \
-  python -m pip_audit -f json -o reports/pip_audit.json
-
-# 7) Pytest + coverage + JUnit
-run_step "Pytest + Coverage" "logs/07_pytest.log" \
-  pytest -q --junitxml=reports/report.xml --cov=. --cov-report=xml:reports/coverage.xml
-
-echo "[INFO] ✅ All quality checks passed"
-'''
-      }
-
-      post {
-        always {
-          junit allowEmptyResults: true, testResults: 'reports/report.xml'
-          archiveArtifacts artifacts: 'logs/**,reports/**', allowEmptyArchive: true
-        }
-      }
+      // Archive coverage for later use (SonarQube can consume coverage.xml too)
+      archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
     }
   }
 }
