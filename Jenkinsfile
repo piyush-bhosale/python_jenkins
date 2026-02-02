@@ -58,7 +58,8 @@ pipeline {
 
           echo "=============================="
           echo "2) Ruff Format Check"
-          echo "=============================="
+          echo "=============================="          
+          python -m ruff format .
           python -m ruff format --check .
 
           echo "=============================="
