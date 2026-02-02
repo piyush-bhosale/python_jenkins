@@ -45,8 +45,9 @@ pipeline {
           echo "=============================="
           echo "2) Ruff Format Check"
           echo "=============================="
+          python -m ruff format .
           python -m ruff format --check .
-
+          
           echo "=============================="
           echo "3) Black Format Check (optional)"
           echo "=============================="
