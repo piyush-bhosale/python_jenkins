@@ -76,7 +76,7 @@ pipeline {
           echo "=============================="
           echo "5) Bandit Security Scan"
           echo "=============================="
-          python -m bandit -r . -ll
+          python -m bandit -r app tests -ll
 
           echo "=============================="
           echo "6) pip-audit (Dependency Scan)"
