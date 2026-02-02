@@ -108,11 +108,13 @@ pipeline {
                         # Otherwise, you can call it using tool('SonarScanner') approach.
                         sonar-scanner \
                           -Dsonar.projectKey=python_jenkins \
+                          -Dsonar.projectName=python_jenkins \
+                          -Dsonar.branch.name=main \
                           -Dsonar.sources=app \
                           -Dsonar.tests=tests \
                           -Dsonar.python.coverage.reportPaths=coverage.xml \
                           -Dsonar.junit.reportPaths=report.xml \
-                          -Dsonar.host.url=http://YOUR-SONARQUBE-IP:9000 \
+                          -Dsonar.host.url=http://52.66.12.73:9000 \
                           -Dsonar.login=${SONAR_TOKEN}
                         '''
                 }
