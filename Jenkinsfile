@@ -3,7 +3,6 @@ pipeline {
 
   options {
     timestamps()
-    ansiColor('xterm')
   }
 
   stages {
@@ -27,7 +26,7 @@ pipeline {
           [ -f requirements.txt ] && pip install -r requirements.txt || true
           [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || true
 
-          # IMPORTANT: install your repo as a package (needs pyproject.toml or setup.py)
+          # Install your repo as package (requires pyproject.toml or setup.py)
           pip install -e .
         '''
       }
@@ -39,7 +38,6 @@ pipeline {
           set -euxo pipefail
           . .venv/bin/activate
 
-          # Create reports even if failures happen later
           pytest -q --junitxml=report.xml --cov=. --cov-report=xml
         '''
       }
@@ -58,7 +56,7 @@ pipeline {
           python -m ruff check .
 
           echo "=============================="
-          echo "2) Ruff Format Check (recommended)"
+          echo "2) Ruff Format Check"
           echo "=============================="
           python -m ruff format --check .
 
@@ -74,19 +72,18 @@ pipeline {
           python -m mypy --ignore-missing-imports .
 
           echo "=============================="
-          echo "5) Bandit Security Scan (Python SAST)"
+          echo "5) Bandit Security Scan"
           echo "=============================="
           python -m bandit -r . -ll
 
           echo "=============================="
-          echo "6) pip-audit (Dependency Vulnerability Scan)"
+          echo "6) pip-audit (Dependency Scan)"
           echo "=============================="
-          # Ensure pip-audit is installed (commonly in dev requirements)
           python -m pip install -q pip-audit || true
           pip-audit || true
 
           echo "=============================="
-          echo "✅ All Python quality checks completed"
+          echo "✅ Quality checks completed"
           echo "=============================="
         '''
       }
@@ -95,10 +92,7 @@ pipeline {
 
   post {
     always {
-      // Publish JUnit even if tests fail
       junit allowEmptyResults: true, testResults: 'report.xml'
-
-      // Archive coverage for later use (SonarQube can consume coverage.xml too)
       archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
     }
   }
