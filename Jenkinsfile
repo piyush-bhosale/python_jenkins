@@ -61,32 +61,35 @@ pipeline {
     }
 
     stage('Dependency Lock Check (pip-tools)') {
-  steps {
-    sh '''#!/usr/bin/env bash
-      set -euxo pipefail
-      source .venv/bin/activate
+      steps {
+        sh '''#!/usr/bin/env bash
+        set -euxo pipefail
+        source .venv/bin/activate
 
-      # Upgrade pip and pip-tools to avoid pip internal API mismatch
-      python -m pip install --upgrade pip
-      python -m pip install --upgrade "pip-tools>=7.5.2"
+        # Workaround: pip 26 breaks pip-tools 7.5.2 (allow_all_prereleases removed/changed)
+        # Pin pip below 26 for lock compilation until pip-tools adds full pip 26 support.
+        python -m pip install --upgrade "pip<26" "pip-tools==7.5.2"
 
-      python -m piptools compile --version || true
+        python -m pip --version
+        python -m piptools compile --version
 
-      echo "➡ Compiling prod lock file"
-      pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+        # Compile lock files (with hashes for reproducibility)
+        if [[ -f requirements.in ]]; then
+          pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+        fi
+  
+        if [[ -f requirements-dev.in ]]; then
+          pip-compile --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
+        fi
 
-      echo "➡ Compiling dev lock file"
-      pip-compile --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
-
-      echo "➡ Verifying lock files are committed & up to date"
-      git diff --exit-code requirements.txt requirements-dev.txt || {
-        echo "❌ Lock files changed. Run pip-compile locally and commit updated files."
-        exit 1
-      }
-    '''
+        # Ensure lock files are committed and up-to-date
+        git diff --exit-code requirements.txt requirements-dev.txt || {
+          echo "❌ Lock files changed. Run pip-compile locally and commit updated lock files."
+          exit 1
+        }
+      '''
     }
   }
-
     stage('Run Tests') {
       steps {
         sh '''#!/usr/bin/env bash
