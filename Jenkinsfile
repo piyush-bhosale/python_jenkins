@@ -10,7 +10,32 @@ pipeline {
     // SonarQube token credential ID in Jenkins
     SONAR_TOKEN = credentials('SonarQube2')
   }
+  
+  stage('Preflight Validation') {
+  steps {
+    sh '''
+      set -euxo pipefail
+      
+      echo "➡ Validating Python Environment"
+      python3 --version
+      pip3 --version
 
+      echo "➡ Checking required project files"
+      test -f pyproject.toml || test -f setup.py
+
+      echo "➡ Checking required directories"
+      test -d app
+      test -d tests
+
+      echo "➡ Checking requirements syntax (if exists)"
+      if [[ -f requirements.txt ]]; then
+        pip3 install -r requirements.txt --dry-run
+      fi
+
+      echo "✅ Preflight checks passed"
+    '''
+  }
+}
   stages {
     stage('Checkout Code') {
       steps {
