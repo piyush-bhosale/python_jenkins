@@ -15,8 +15,9 @@ pipeline {
 
     // S3 bucket (as requested)
     S3_BUCKET = 'demo-python-jenkins'
-    // If your agent already has default region configured, you can keep this empty
-    // Otherwise set it like: ap-south-1
+
+    // Optional: set region if AWS CLI is not configured with a default region on agent
+    // Example: AWS_REGION = 'ap-south-1'
     AWS_REGION = ''
   }
 
@@ -77,6 +78,7 @@ pipeline {
           echo "➡ Checking requirements-dev.txt is fully pinned (== only)"
           test -f requirements-dev.txt
 
+          # Ignore blanks/comments/options, fail if line is unpinned or uses >= <= ~= !=
           bad=$(grep -nEv '^(\\s*$|\\s*#|\\s*-r\\s+|\\s*-c\\s+|\\s*--|\\s*-f\\s+|\\s*-i\\s+)' requirements-dev.txt \
                 | grep -nE '(^[^=<>!~@]+$|>=|<=|~=|!=)' || true)
 
@@ -146,30 +148,35 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
+
           # Dependency-Check pip analyzer expects requirements.txt
           cp -f requirements-dev.txt requirements.txt
         '''
 
-        dependencyCheck(
-          odcInstallation: 'OWASP-DC',
-          additionalArguments: '''
-            --scan .
-            --format XML
-            --out .
-            --enableExperimental
-            --exclude **/.venv/**
-            --exclude **/.git/**
-            --exclude **/__pycache__/**
-          ''',
-          debug: true
-        )
+        // "Always SUCCESS" behavior even if update/network glitches happen
+        catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
 
-        // Always SUCCESS (no thresholds)
-        dependencyCheckPublisher(
-          pattern: '**/dependency-check-report.xml',
-          stopBuild: false,
-          skipNoReportFiles: true
-        )
+          dependencyCheck(
+            odcInstallation: 'OWASP-DC',
+            additionalArguments: '''
+              --scan .
+              --format XML
+              --out .
+              --enableExperimental
+              --exclude **/.venv/**
+              --exclude **/.git/**
+              --exclude **/__pycache__/**
+            ''',
+            debug: true
+          )
+
+          // Always SUCCESS: no thresholds
+          dependencyCheckPublisher(
+            pattern: '**/dependency-check-report.xml',
+            stopBuild: false,
+            skipNoReportFiles: true
+          )
+        }
       }
     }
 
@@ -223,7 +230,6 @@ pipeline {
           LOCAL_TAG="${IMAGE_LOCAL_NAME}:${BUILD_NUMBER}-${GIT_SHA}"
 
           echo "✅ Building Docker image: ${LOCAL_TAG}"
-
           docker build -t "${LOCAL_TAG}" .
 
           echo "${LOCAL_TAG}" > image_tag.txt
@@ -240,11 +246,9 @@ pipeline {
           LOCAL_TAG=$(cat image_tag.txt)
           echo "🔍 Trivy scanning image: ${LOCAL_TAG}"
 
-          # Non-blocking scan
-          trivy image --no-progress --severity HIGH,CRITICAL --exit-code 0 "${LOCAL_TAG}" || true  # Trivy image scan supports these options [2](https://github.com/aquasecurity/trivy)[3](https://janik6n.net/posts/run-security-scans-on-terraform-and-opentofu-project-with-trivy-and-github-actions/)
-
-          # Optional JSON report
-          trivy image --no-progress --format json --output trivy-image-report.json "${LOCAL_TAG}" || true  # Trivy supports JSON output [2](https://github.com/aquasecurity/trivy)[3](https://janik6n.net/posts/run-security-scans-on-terraform-and-opentofu-project-with-trivy-and-github-actions/)
+          # Non-blocking scan + JSON report
+          trivy image --no-progress --severity HIGH,CRITICAL --exit-code 0 "${LOCAL_TAG}" || true
+          trivy image --no-progress --format json --output trivy-image-report.json "${LOCAL_TAG}" || true
 
           echo "✅ Trivy scan completed (non-blocking)."
         '''
@@ -268,10 +272,10 @@ pipeline {
             echo "➡ Tagging image for Docker Hub: ${DOCKERHUB_IMAGE}"
             docker tag "${LOCAL_TAG}" "${DOCKERHUB_IMAGE}"
 
-            # Secure non-interactive login using --password-stdin [4](https://nvd.nist.gov/developers/request-an-api-key)[5](https://ttlnews.blogspot.com/2023/12/owasp-dependencycheck-returns-403.html)
+            # Secure login
             echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
 
-            # Push image to Docker Hub (NAME[:TAG]) [6](https://github.com/EmAdd9/Dependency-Check)
+            # Push to Docker Hub
             docker push "${DOCKERHUB_IMAGE}"
 
             echo "✅ Pushed to Docker Hub: ${DOCKERHUB_IMAGE}"
@@ -281,13 +285,11 @@ pipeline {
       }
     }
 
-    // ✅ NEW STAGE: Upload artifacts to S3 bucket demo-python-jenkins
     stage('Upload Artifacts to S3 (demo-python-jenkins)') {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
-          # If AWS_REGION is empty, aws CLI will use the agent's default configured region.
           REGION_ARG=""
           if [[ -n "${AWS_REGION}" ]]; then
             REGION_ARG="--region ${AWS_REGION}"
@@ -296,19 +298,20 @@ pipeline {
           DEST="s3://${S3_BUCKET}/jenkins-builds/${JOB_NAME}/${BUILD_NUMBER}/"
           echo "⬆ Uploading artifacts to: ${DEST}"
 
-          # Upload dist directory (wheel/sdist)
+          # Upload build artifacts
           if [[ -d dist ]]; then
-            aws s3 cp dist/ "${DEST}dist/" --recursive ${REGION_ARG}  # aws s3 cp supports --recursive for directories [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
+            aws s3 cp dist/ "${DEST}dist/" --recursive ${REGION_ARG}
           fi
 
-          # Upload key reports and metadata (only if they exist)
-          [[ -f coverage.xml ]] && aws s3 cp coverage.xml "${DEST}" ${REGION_ARG} || true  # aws s3 cp uploads files to s3:// [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
+          # Upload reports and metadata (if exist)
+          [[ -f coverage.xml ]] && aws s3 cp coverage.xml "${DEST}" ${REGION_ARG} || true
+          [[ -f report.xml ]] && aws s3 cp report.xml "${DEST}" ${REGION_ARG} || true
 
-          ls dependency-check-report.* >/dev/null 2>&1 && aws s3 cp dependency-check-report.* "${DEST}" ${REGION_ARG} || true  # aws s3 cp supports copying matching files [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
+          ls dependency-check-report.* >/dev/null 2>&1 && aws s3 cp dependency-check-report.* "${DEST}" ${REGION_ARG} || true
 
-          [[ -f trivy-image-report.json ]] && aws s3 cp trivy-image-report.json "${DEST}" ${REGION_ARG} || true  # aws s3 cp file upload [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
-          [[ -f image_tag.txt ]] && aws s3 cp image_tag.txt "${DEST}" ${REGION_ARG} || true  # aws s3 cp file upload [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
-          [[ -f dockerhub_image.txt ]] && aws s3 cp dockerhub_image.txt "${DEST}" ${REGION_ARG} || true  # aws s3 cp file upload [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
+          [[ -f trivy-image-report.json ]] && aws s3 cp trivy-image-report.json "${DEST}" ${REGION_ARG} || true
+          [[ -f image_tag.txt ]] && aws s3 cp image_tag.txt "${DEST}" ${REGION_ARG} || true
+          [[ -f dockerhub_image.txt ]] && aws s3 cp dockerhub_image.txt "${DEST}" ${REGION_ARG} || true
 
           echo "✅ S3 upload complete"
         '''
@@ -320,9 +323,14 @@ pipeline {
   post {
     always {
       junit allowEmptyResults: true, testResults: 'report.xml'
+
+      // Jenkins artifacts
       archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
+      archiveArtifacts artifacts: 'report.xml', allowEmptyArchive: true
       archiveArtifacts artifacts: 'dist/*', allowEmptyArchive: true
       archiveArtifacts artifacts: 'dependency-check-report.*', allowEmptyArchive: true
+
+      // Docker/Trivy metadata
       archiveArtifacts artifacts: 'image_tag.txt,trivy-image-report.json,dockerhub_image.txt', allowEmptyArchive: true
     }
   }
