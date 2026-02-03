@@ -8,6 +8,8 @@ pipeline {
 
   environment {
     SONAR_TOKEN = credentials('SonarQube2')
+    DOCKERHUB_REPO = 'piyushbhosale9226/python_jenkins'
+    IMAGE_LOCAL_NAME = 'python-jenkins-demo'
   }
 
   stages {
@@ -67,7 +69,6 @@ pipeline {
           echo "➡ Checking requirements-dev.txt is fully pinned (== only)"
           test -f requirements-dev.txt
 
-          # Ignore blanks/comments/options, fail if line is unpinned or uses >= <= ~= !=
           bad=$(grep -nEv '^(\\s*$|\\s*#|\\s*-r\\s+|\\s*-c\\s+|\\s*--|\\s*-f\\s+|\\s*-i\\s+)' requirements-dev.txt \
                 | grep -nE '(^[^=<>!~@]+$|>=|<=|~=|!=)' || true)
 
@@ -137,7 +138,6 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
-
           # Dependency-Check pip analyzer expects requirements.txt
           cp -f requirements-dev.txt requirements.txt
         '''
@@ -206,47 +206,79 @@ pipeline {
       }
     }
 
-    // ✅ Docker build MUST be inside stages{}
+    // ✅ Build Docker image after code/package build
     stage('Build Docker Image') {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
           GIT_SHA=$(git rev-parse --short HEAD)
-          IMAGE_TAG="python-jenkins-demo:${BUILD_NUMBER}-${GIT_SHA}"
+          LOCAL_TAG="${IMAGE_LOCAL_NAME}:${BUILD_NUMBER}-${GIT_SHA}"
 
-          echo "✅ Building Docker image: ${IMAGE_TAG}"
+          echo "✅ Building Docker image: ${LOCAL_TAG}"
 
-          # docker build builds image from Dockerfile in current directory. [1](https://discuss.python.org/t/announcement-pip-26-0-release/105947)[2](https://pip.pypa.io/en/stable/news/)
-          docker build -t "${IMAGE_TAG}" .
+          # docker build builds an image from Dockerfile in the repo directory. [5](https://github.com/dependency-check/DependencyCheck/issues/6515)[6](https://ttlnews.blogspot.com/2023/12/owasp-dependencycheck-returns-403.html)
+          docker build -t "${LOCAL_TAG}" .
 
-          echo "${IMAGE_TAG}" > image_tag.txt
-          echo "✅ Image created: ${IMAGE_TAG}"
+          echo "${LOCAL_TAG}" > image_tag.txt
+          echo "✅ Image created: ${LOCAL_TAG}"
         '''
       }
     }
 
-    // ✅ Trivy scan MUST be inside stages{}
+    // ✅ Trivy scan the created image (non-blocking)
     stage('Trivy Image Scan') {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
-          IMAGE_TAG=$(cat image_tag.txt)
-          echo "🔍 Trivy scanning image: ${IMAGE_TAG}"
+          LOCAL_TAG=$(cat image_tag.txt)
+          echo "🔍 Trivy scanning image: ${LOCAL_TAG}"
 
-          # trivy image scans container image; supports --severity and --exit-code. [3](https://pypi.org/project/pip-tools/)[4](https://discuss.python.org/t/install-prerelease-of-a-project-but-not-of-its-dependencies/49640)
-          trivy image --no-progress --severity HIGH,CRITICAL --exit-code 0 "${IMAGE_TAG}" || true
+          # Trivy scans container images; supports severity filtering and exit code behavior. [3](https://deepwiki.com/dependency-check/dependency-check-gradle/5.1-nvd-configuration)[4](https://github.com/jenkinsci/dependency-check-plugin)
+          trivy image --no-progress --severity HIGH,CRITICAL --exit-code 0 "${LOCAL_TAG}" || true
 
-          # Optional JSON report
-          trivy image --no-progress --format json --output trivy-image-report.json "${IMAGE_TAG}" || true
+          # Optional JSON report as artifact
+          trivy image --no-progress --format json --output trivy-image-report.json "${LOCAL_TAG}" || true
 
           echo "✅ Trivy scan completed (non-blocking)."
         '''
       }
     }
 
-  } // <-- end stages
+    // ✅ Push to Docker Hub repo: piyushbhosale9226/python_jenkins
+    stage('Push Image to DockerHub') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub',
+          usernameVariable: 'DOCKERHUB_USER',
+          passwordVariable: 'DOCKERHUB_PASS'
+        )]) {
+          sh '''#!/usr/bin/env bash
+            set -euxo pipefail
+
+            LOCAL_TAG=$(cat image_tag.txt)
+            TAG="${LOCAL_TAG#*:}"
+
+            DOCKERHUB_IMAGE="${DOCKERHUB_REPO}:${TAG}"
+
+            echo "➡ Tagging image for Docker Hub: ${DOCKERHUB_IMAGE}"
+            docker tag "${LOCAL_TAG}" "${DOCKERHUB_IMAGE}"
+
+            # Login securely using stdin (recommended for CI). [1](https://github.com/jazzband/pip-tools/issues/2319)[7](https://github.com/spdk/spdk/issues/3822)
+            echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
+
+            # Push image to Docker Hub (NAME[:TAG]). [2](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
+            docker push "${DOCKERHUB_IMAGE}"
+
+            echo "✅ Pushed to Docker Hub: ${DOCKERHUB_IMAGE}"
+            echo "${DOCKERHUB_IMAGE}" > dockerhub_image.txt
+          '''
+        }
+      }
+    }
+
+  } // end stages
 
   post {
     always {
@@ -255,8 +287,8 @@ pipeline {
       archiveArtifacts artifacts: 'dist/*', allowEmptyArchive: true
       archiveArtifacts artifacts: 'dependency-check-report.*', allowEmptyArchive: true
 
-      // Trivy artifacts (optional)
-      archiveArtifacts artifacts: 'image_tag.txt,trivy-image-report.json', allowEmptyArchive: true
+      // Docker/Trivy artifacts
+      archiveArtifacts artifacts: 'image_tag.txt,trivy-image-report.json,dockerhub_image.txt', allowEmptyArchive: true
     }
   }
 }
