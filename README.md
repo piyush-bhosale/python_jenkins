@@ -1,6 +1,6 @@
 # ✅ **FULL PIPELINE REPORT**
 
-### *CICD||DevOps||DevSecOPs*
+### *DevOps | DevSecOPs*
 
 ***
 
