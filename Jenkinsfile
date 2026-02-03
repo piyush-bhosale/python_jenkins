@@ -7,16 +7,13 @@ pipeline {
   }
 
   environment {
-    // SonarQube token credential ID in Jenkins
     SONAR_TOKEN = credentials('SonarQube2')
   }
 
   stages {
 
     stage('Checkout Code') {
-      steps {
-        checkout scm
-      }
+      steps { checkout scm }
     }
 
     stage('Preflight Validation') {
@@ -51,48 +48,31 @@ pipeline {
           python3 -m venv .venv
           source .venv/bin/activate
 
+          # ⚠️ This upgrades pip to latest (currently installs pip 26.0 in your logs)
           python -m pip install --upgrade pip wheel setuptools
 
-          # Install ONLY dev requirements (as requested)
+          # Install ONLY dev requirements
           pip install -r requirements-dev.txt
 
-          # Install your repo as a package (requires pyproject.toml or setup.py)
           pip install -e .
         '''
       }
     }
 
-    // ✅ NEW: Dependency Lock Enforcement (ONLY requirements-dev.txt)
-    // This stage fails if requirements-dev.txt has unpinned deps like >=, ~=, != or no version at all
     stage('Dependency Lock Enforcement') {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
           echo "➡ Checking requirements-dev.txt is fully pinned (== only)"
-
           test -f requirements-dev.txt
 
-          # Ignore:
-          # - blank lines
-          # - comments
-          # - include/constraints lines (-r, -c)
-          # - pip options like --index-url, --extra-index-url, --trusted-host, -f, -i, etc.
-          #
-          # Fail if a remaining line:
-          # - has no version spec at all
-          # - or uses >=, <=, ~=, != (not fully locked)
           bad=$(grep -nEv '^(\\s*$|\\s*#|\\s*-r\\s+|\\s*-c\\s+|\\s*--|\\s*-f\\s+|\\s*-i\\s+)' requirements-dev.txt \
                 | grep -nE '(^[^=<>!~@]+$|>=|<=|~=|!=)' || true)
 
           if [[ -n "$bad" ]]; then
             echo "❌ Found non-locked dependencies in requirements-dev.txt:"
             echo "$bad"
-            echo
-            echo "✅ Fix examples:"
-            echo "   requests==2.31.0"
-            echo "   urllib3==2.6.3"
-            echo "   certifi==2026.1.4"
             exit 1
           fi
 
@@ -125,9 +105,9 @@ pipeline {
           python -m ruff check .
 
           echo "=============================="
-          echo "2) Ruff Format Check"
+          echo "2) Ruff Format Check (CI strict)"
           echo "=============================="
-          # In CI, do check-only (avoid modifying code)
+          echo "If this fails, run: ruff format . and commit changes"
           python -m ruff format --check .
 
           echo "=============================="
@@ -160,8 +140,6 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        // SonarQube server configured in Jenkins:
-        // Manage Jenkins -> System -> SonarQube servers (Name = SonarQube_Server)
         withSonarQubeEnv('SonarQube_Server') {
           sh '''#!/usr/bin/env bash
             set -euxo pipefail
@@ -193,16 +171,10 @@ pipeline {
           set -euxo pipefail
           source .venv/bin/activate
 
-          echo "=============================="
-          echo "📦 Building package artifacts"
-          echo "=============================="
-
           rm -rf dist/ build/ *.egg-info || true
-
           python -m pip install --upgrade build
           python -m build
 
-          echo "✅ Built artifacts:"
           ls -lh dist/
         '''
       }
