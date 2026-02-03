@@ -8,15 +8,9 @@ pipeline {
 
   environment {
     SONAR_TOKEN = credentials('SonarQube2')
-
-    // DockerHub repo
     DOCKERHUB_REPO = 'piyushbhosale9226/python_jenkins'
     IMAGE_LOCAL_NAME = 'python-jenkins-demo'
-
-    // S3 bucket
     S3_BUCKET = 'demo-python-jenkins'
-
-    // You already have default region on agent, but keeping explicit is fine:
     AWS_REGION = 'ap-south-1'
   }
 
@@ -31,18 +25,18 @@ pipeline {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
-          echo "➡ Validating Python Environment"
+          echo "Validating Python Environment"
           python3 --version
           pip3 --version
 
-          echo "➡ Checking required project files"
+          echo "Checking required project files"
           test -f pyproject.toml || test -f setup.py
 
-          echo "➡ Checking required directories"
+          echo "Checking required directories"
           test -d app || true
           test -d tests
 
-          echo "➡ Checking requirements-dev.txt exists"
+          echo "Checking requirements-dev.txt exists"
           test -f requirements-dev.txt
 
           echo "Preflight checks passed"
@@ -59,11 +53,7 @@ pipeline {
           source .venv/bin/activate
 
           python -m pip install --upgrade pip wheel setuptools
-
-          # Install ONLY dev requirements
           pip install -r requirements-dev.txt
-
-          # Install your repo as a package
           pip install -e .
         '''
       }
@@ -74,7 +64,7 @@ pipeline {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
-          echo "➡ Checking requirements-dev.txt is fully pinned (== only)"
+          echo "Checking requirements-dev.txt is fully pinned (== only)"
           test -f requirements-dev.txt
 
           # Ignore blanks/comments/options, fail if line is unpinned or uses >= <= ~= !=
@@ -147,12 +137,9 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
-
-          # Dependency-Check pip analyzer expects requirements.txt
           cp -f requirements-dev.txt requirements.txt
         '''
 
-       
         catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
           dependencyCheck(
             odcInstallation: 'OWASP-DC',
@@ -167,8 +154,6 @@ pipeline {
             ''',
             debug: true
           )
-
-          // Always SUCCESS: no thresholds
           dependencyCheckPublisher(
             pattern: '**/dependency-check-report.xml',
             stopBuild: false,
