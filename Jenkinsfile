@@ -13,9 +13,15 @@ pipeline {
 
   stages {
 
+    stage('Checkout Code') {
+      steps {
+        checkout scm
+      }
+    }
+
     stage('Preflight Validation') {
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
           echo "➡ Validating Python Environment"
@@ -36,12 +42,6 @@ pipeline {
 
           echo "✅ Preflight checks passed"
         '''
-      }
-    }
-
-    stage('Checkout Code') {
-      steps {
-        checkout scm
       }
     }
 
@@ -162,9 +162,13 @@ pipeline {
           echo "📦 Building package artifacts"
           echo "=============================="
 
+          # Clean previous outputs
           rm -rf dist/ build/ *.egg-info || true
 
+          # Ensure build tool exists (safe)
           python -m pip install --upgrade build
+
+          # Build sdist + wheel
           python -m build
 
           echo "✅ Built artifacts:"
@@ -176,8 +180,11 @@ pipeline {
 
   post {
     always {
+      // Keep your existing reports
       junit allowEmptyResults: true, testResults: 'report.xml'
       archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
+
+      // Archive package artifacts
       archiveArtifacts artifacts: 'dist/*', allowEmptyArchive: true
     }
   }
