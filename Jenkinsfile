@@ -13,11 +13,10 @@ pipeline {
     DOCKERHUB_REPO = 'piyushbhosale9226/python_jenkins'
     IMAGE_LOCAL_NAME = 'python-jenkins-demo'
 
-    // S3 bucket (as requested)
+    // S3 bucket
     S3_BUCKET = 'demo-python-jenkins'
 
-    // Optional: set region if AWS CLI is not configured with a default region on agent
-    // Example: AWS_REGION = 'ap-south-1'
+    // You already have default region on agent, but keeping explicit is fine:
     AWS_REGION = 'ap-south-1'
   }
 
@@ -153,9 +152,8 @@ pipeline {
           cp -f requirements-dev.txt requirements.txt
         '''
 
-        // "Always SUCCESS" behavior even if update/network glitches happen
+        // Always SUCCESS behavior even if update/network glitches happen
         catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-
           dependencyCheck(
             odcInstallation: 'OWASP-DC',
             additionalArguments: '''
@@ -246,7 +244,7 @@ pipeline {
           LOCAL_TAG=$(cat image_tag.txt)
           echo "🔍 Trivy scanning image: ${LOCAL_TAG}"
 
-          # Non-blocking scan + JSON report
+          # Non-blocking scan + JSON report [4](https://github.com/aquasecurity/trivy)[5](https://janik6n.net/posts/run-security-scans-on-terraform-and-opentofu-project-with-trivy-and-github-actions/)
           trivy image --no-progress --severity HIGH,CRITICAL --exit-code 0 "${LOCAL_TAG}" || true
           trivy image --no-progress --format json --output trivy-image-report.json "${LOCAL_TAG}" || true
 
@@ -272,10 +270,10 @@ pipeline {
             echo "➡ Tagging image for Docker Hub: ${DOCKERHUB_IMAGE}"
             docker tag "${LOCAL_TAG}" "${DOCKERHUB_IMAGE}"
 
-            # Secure login
+            # Secure login using --password-stdin [2](https://nvd.nist.gov/developers/request-an-api-key)[6](https://ttlnews.blogspot.com/2023/12/owasp-dependencycheck-returns-403.html)
             echo "${DOCKERHUB_PASS}" | docker login -u "${DOCKERHUB_USER}" --password-stdin
 
-            # Push to Docker Hub
+            # Push image to Docker Hub [3](https://github.com/EmAdd9/Dependency-Check)
             docker push "${DOCKERHUB_IMAGE}"
 
             echo "✅ Pushed to Docker Hub: ${DOCKERHUB_IMAGE}"
@@ -290,28 +288,29 @@ pipeline {
         sh '''#!/usr/bin/env bash
           set -euxo pipefail
 
-          REGION_ARG=""
-          if [[ -n "${AWS_REGION}" ]]; then
-            AWS_REGION_VALUE="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+          # Build region arg properly (safe even with set -u)
+          AWS_REGION_VALUE="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+          REGION_ARG=()
+          if [[ -n "${AWS_REGION_VALUE}" ]]; then
+            REGION_ARG=(--region "${AWS_REGION_VALUE}")
           fi
 
           DEST="s3://${S3_BUCKET}/jenkins-builds/${JOB_NAME}/${BUILD_NUMBER}/"
           echo "⬆ Uploading artifacts to: ${DEST}"
 
-          # Upload build artifacts
+          # Upload build artifacts (recursive for directories) [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
           if [[ -d dist ]]; then
-            aws s3 cp dist/ "${DEST}dist/" --recursive ${REGION_ARG}
+            aws s3 cp dist/ "${DEST}dist/" --recursive "${REGION_ARG[@]}"
           fi
 
-          # Upload reports and metadata (if exist)
-          [[ -f coverage.xml ]] && aws s3 cp coverage.xml "${DEST}" ${REGION_ARG} || true
-          [[ -f report.xml ]] && aws s3 cp report.xml "${DEST}" ${REGION_ARG} || true
+          # Upload reports and metadata if present [1](https://ichard26.github.io/blog/2026/01/whats-new-in-pip-26.0/)
+          [[ -f coverage.xml ]] && aws s3 cp coverage.xml "${DEST}" "${REGION_ARG[@]}" || true
+          [[ -f report.xml ]] && aws s3 cp report.xml "${DEST}" "${REGION_ARG[@]}" || true
 
-          ls dependency-check-report.* >/dev/null 2>&1 && aws s3 cp dependency-check-report.* "${DEST}" ${REGION_ARG} || true
-
-          [[ -f trivy-image-report.json ]] && aws s3 cp trivy-image-report.json "${DEST}" ${REGION_ARG} || true
-          [[ -f image_tag.txt ]] && aws s3 cp image_tag.txt "${DEST}" ${REGION_ARG} || true
-          [[ -f dockerhub_image.txt ]] && aws s3 cp dockerhub_image.txt "${DEST}" ${REGION_ARG} || true
+          ls dependency-check-report.* >/dev/null 2>&1 && aws s3 cp dependency-check-report.* "${DEST}" "${REGION_ARG[@]}" || true
+          [[ -f trivy-image-report.json ]] && aws s3 cp trivy-image-report.json "${DEST}" "${REGION_ARG[@]}" || true
+          [[ -f image_tag.txt ]] && aws s3 cp image_tag.txt "${DEST}" "${REGION_ARG[@]}" || true
+          [[ -f dockerhub_image.txt ]] && aws s3 cp dockerhub_image.txt "${DEST}" "${REGION_ARG[@]}" || true
 
           echo "✅ S3 upload complete"
         '''
