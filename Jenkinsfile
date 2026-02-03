@@ -60,6 +60,29 @@ pipeline {
       }
     }
 
+    stage('Dependency Lock Check (pip-tools)') {
+  steps {
+    sh '''#!/usr/bin/env bash
+      set -euxo pipefail
+      source .venv/bin/activate
+
+      pip install --upgrade pip-tools
+
+      echo "➡ Compiling prod lock file"
+      pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+
+      echo "➡ Compiling dev lock file"
+      pip-compile --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
+
+      echo "➡ Validating lock files"
+      git diff --exit-code requirements.txt requirements-dev.txt || {
+        echo "❌ Lock files changed. Commit updated versions."
+        exit 1
+      }
+    '''
+    }
+   }
+
     stage('Run Tests') {
       steps {
         sh '''#!/usr/bin/env bash
