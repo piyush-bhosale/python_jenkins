@@ -208,6 +208,48 @@ pipeline {
       }
     }
   }
+  stage('Build Docker Image') {
+  steps {
+    sh '''#!/usr/bin/env bash
+      set -euxo pipefail
+
+      # Unique image tag (build number + git short sha)
+      GIT_SHA=$(git rev-parse --short HEAD)
+      IMAGE_TAG="python-jenkins-demo:${BUILD_NUMBER}-${GIT_SHA}"
+
+      echo "✅ Building Docker image: ${IMAGE_TAG}"
+
+      # Build Docker image from Dockerfile in repo root
+      docker build -t "${IMAGE_TAG}" .
+
+      # Save tag for next stage
+      echo "${IMAGE_TAG}" > image_tag.txt
+
+      echo "✅ Image created: ${IMAGE_TAG}"
+    '''
+  }
+} 
+
+  stage('Trivy Image Scan') {
+  steps {
+    sh '''#!/usr/bin/env bash
+      set -euxo pipefail
+
+      IMAGE_TAG=$(cat image_tag.txt)
+      echo "🔍 Trivy scanning image: ${IMAGE_TAG}"
+
+      # Scan HIGH & CRITICAL issues, but do not fail pipeline (exit-code 0)
+      trivy image --no-progress --severity HIGH,CRITICAL --exit-code 0 "${IMAGE_TAG}" || true
+
+      # Optional: Generate JSON report as artifact
+      trivy image --no-progress --format json --output trivy-image-report.json "${IMAGE_TAG}" || true
+
+      echo "✅ Trivy scan completed (non-blocking). Report: trivy-image-report.json"
+    '''
+  }
+}
+
+  
 
   post {
     always {
