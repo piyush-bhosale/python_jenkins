@@ -18,7 +18,7 @@ pipeline {
 
     // Optional: set region if AWS CLI is not configured with a default region on agent
     // Example: AWS_REGION = 'ap-south-1'
-    AWS_REGION = ''
+    AWS_REGION = 'ap-south-1'
   }
 
   stages {
