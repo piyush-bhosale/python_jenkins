@@ -302,19 +302,17 @@ pipeline {
       }
     }
 
-  } // end stages
+  }
 
   post {
     always {
       junit allowEmptyResults: true, testResults: 'report.xml'
 
-      // Jenkins artifacts
       archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
       archiveArtifacts artifacts: 'report.xml', allowEmptyArchive: true
       archiveArtifacts artifacts: 'dist/*', allowEmptyArchive: true
       archiveArtifacts artifacts: 'dependency-check-report.*', allowEmptyArchive: true
 
-      // Docker/Trivy metadata
       archiveArtifacts artifacts: 'image_tag.txt,trivy-image-report.json,dockerhub_image.txt', allowEmptyArchive: true
     }
   }
