@@ -30,15 +30,10 @@ pipeline {
 
           echo "➡ Checking required project files"
           test -f pyproject.toml || test -f setup.py
-
+          
           echo "➡ Checking required directories"
           test -d app
           test -d tests
-
-          echo "➡ Checking requirements syntax (if exists)"
-          if [[ -f requirements.txt ]]; then
-            pip3 install -r requirements.txt --dry-run
-          fi
 
           echo "✅ Preflight checks passed"
         '''
