@@ -1,0 +1,11 @@
+requests
+urllib3
+certifi
+pytest
+ruff
+black
+bandit
+mypy
+pytest-cov
+build
+pip-audit
