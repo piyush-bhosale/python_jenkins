@@ -1,6 +1,6 @@
 # ✅ **FULL PIPELINE REPORT**
 
-### *DevOps | DevSecOPs*
+### *DevOps | DevSecOps*
 
 ***
 
