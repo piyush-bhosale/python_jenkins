@@ -66,7 +66,11 @@ pipeline {
       set -euxo pipefail
       source .venv/bin/activate
 
-      pip install --upgrade pip-tools
+      # Upgrade pip and pip-tools to avoid pip internal API mismatch
+      python -m pip install --upgrade pip
+      python -m pip install --upgrade "pip-tools>=7.5.2"
+
+      python -m piptools compile --version || true
 
       echo "➡ Compiling prod lock file"
       pip-compile --generate-hashes --output-file=requirements.txt requirements.in
@@ -74,14 +78,14 @@ pipeline {
       echo "➡ Compiling dev lock file"
       pip-compile --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
 
-      echo "➡ Validating lock files"
+      echo "➡ Verifying lock files are committed & up to date"
       git diff --exit-code requirements.txt requirements-dev.txt || {
-        echo "❌ Lock files changed. Commit updated versions."
+        echo "❌ Lock files changed. Run pip-compile locally and commit updated files."
         exit 1
       }
     '''
     }
-   }
+  }
 
     stage('Run Tests') {
       steps {
