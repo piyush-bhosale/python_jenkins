@@ -7,16 +7,13 @@ pipeline {
   }
 
   environment {
-    // SonarQube token credential ID in Jenkins
     SONAR_TOKEN = credentials('SonarQube2')
   }
 
   stages {
 
     stage('Checkout Code') {
-      steps {
-        checkout scm
-      }
+      steps { checkout scm }
     }
 
     stage('Preflight Validation') {
@@ -56,13 +53,12 @@ pipeline {
           # Install ONLY dev requirements
           pip install -r requirements-dev.txt
 
-          # Install your repo as a package (requires pyproject.toml or setup.py)
+          # Install your repo as a package
           pip install -e .
         '''
       }
     }
 
-    // ✅ Dependency Lock Enforcement (ONLY requirements-dev.txt)
     stage('Dependency Lock Enforcement') {
       steps {
         sh '''#!/usr/bin/env bash
@@ -71,18 +67,12 @@ pipeline {
           echo "➡ Checking requirements-dev.txt is fully pinned (== only)"
           test -f requirements-dev.txt
 
-          # Ignore blank lines, comments, includes (-r/-c), and pip options (--*, -f, -i)
           bad=$(grep -nEv '^(\\s*$|\\s*#|\\s*-r\\s+|\\s*-c\\s+|\\s*--|\\s*-f\\s+|\\s*-i\\s+)' requirements-dev.txt \
                 | grep -nE '(^[^=<>!~@]+$|>=|<=|~=|!=)' || true)
 
           if [[ -n "$bad" ]]; then
             echo "❌ Found non-locked dependencies in requirements-dev.txt:"
             echo "$bad"
-            echo
-            echo "✅ Fix examples:"
-            echo "   requests==2.31.0"
-            echo "   urllib3==2.6.3"
-            echo "   certifi==2026.1.4"
             exit 1
           fi
 
@@ -117,41 +107,69 @@ pipeline {
           echo "=============================="
           echo "2) Ruff Format Check (NON-BLOCKING)"
           echo "=============================="
-          echo "⚠ Will not fail pipeline. To fix locally: ruff format ."
           python -m ruff format --check . || true
 
           echo "=============================="
-          echo "3) Black Format Check (optional)"
+          echo "3) Black Format Check (optional, NON-BLOCKING)"
           echo "=============================="
-          python -m black --version
           python -m black --check . || true
 
           echo "=============================="
-          echo "4) Mypy Type Checking (optional)"
+          echo "4) Mypy Type Checking (optional, NON-BLOCKING)"
           echo "=============================="
           python -m mypy --ignore-missing-imports . || true
 
           echo "=============================="
-          echo "5) Bandit Security Scan"
+          echo "5) Bandit Security Scan (NON-BLOCKING)"
           echo "=============================="
           python -m bandit -r app tests -ll || true
 
           echo "=============================="
-          echo "6) pip-audit (Dependency Scan)"
+          echo "6) pip-audit (Dependency Scan, NON-BLOCKING)"
           echo "=============================="
           pip-audit || true
-
-          echo "=============================="
-          echo "✅ Quality checks completed"
-          echo "=============================="
         '''
+      }
+    }
+
+    // ✅ NEW: OWASP Dependency-Check (SCA CVE scan)
+    stage('OWASP Dependency-Check (CVE Scan)') {
+      steps {
+        sh '''#!/usr/bin/env bash
+          set -euxo pipefail
+
+          # OWASP Dependency-Check pip analyzer scans files named exactly "requirements.txt"
+          # and requires --enableExperimental for Python.  [4](https://dependency-check.github.io/DependencyCheck/analyzers/pip.html)[5](https://github.com/jeremylong/DependencyCheck/blob/main/src/site/markdown/analyzers/pip.md)
+          cp -f requirements-dev.txt requirements.txt
+        '''
+
+        // Run the scan via Jenkins plugin step
+        dependencyCheck(
+          odcInstallation: 'OWASP-DC',
+          additionalArguments: '''
+            --scan .
+            --format XML
+            --out .
+            --enableExperimental
+            --exclude **/.venv/**
+            --exclude **/.git/**
+            --exclude **/__pycache__/**
+          ''',
+          debug: true
+        )
+
+        // Publish results and enforce thresholds
+        dependencyCheckPublisher(
+          pattern: '**/dependency-check-report.xml',
+          stopBuild: true,
+          failedTotalCritical: 1,
+          failedTotalHigh: 1
+        )
       }
     }
 
     stage('SonarQube Analysis') {
       steps {
-        // Uses the SonarQube server configured in Jenkins:
-        // Manage Jenkins -> System -> SonarQube servers (Name = SonarQube_Server)
         withSonarQubeEnv('SonarQube_Server') {
           sh '''#!/usr/bin/env bash
             set -euxo pipefail
@@ -183,16 +201,9 @@ pipeline {
           set -euxo pipefail
           source .venv/bin/activate
 
-          echo "=============================="
-          echo "📦 Building package artifacts"
-          echo "=============================="
-
           rm -rf dist/ build/ *.egg-info || true
-
           python -m pip install --upgrade build
           python -m build
-
-          echo "✅ Built artifacts:"
           ls -lh dist/
         '''
       }
@@ -204,6 +215,9 @@ pipeline {
       junit allowEmptyResults: true, testResults: 'report.xml'
       archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
       archiveArtifacts artifacts: 'dist/*', allowEmptyArchive: true
+
+      // archive OWASP reports
+      archiveArtifacts artifacts: 'dependency-check-report.*', allowEmptyArchive: true
     }
   }
 }
