@@ -10,33 +10,35 @@ pipeline {
     // SonarQube token credential ID in Jenkins
     SONAR_TOKEN = credentials('SonarQube2')
   }
-  
-  stage('Preflight Validation') {
-  steps {
-    sh '''
-      set -euxo pipefail
-      
-      echo "➡ Validating Python Environment"
-      python3 --version
-      pip3 --version
 
-      echo "➡ Checking required project files"
-      test -f pyproject.toml || test -f setup.py
-
-      echo "➡ Checking required directories"
-      test -d app
-      test -d tests
-
-      echo "➡ Checking requirements syntax (if exists)"
-      if [[ -f requirements.txt ]]; then
-        pip3 install -r requirements.txt --dry-run
-      fi
-
-      echo "✅ Preflight checks passed"
-    '''
-  }
-}
   stages {
+
+    stage('Preflight Validation') {
+      steps {
+        sh '''
+          set -euxo pipefail
+
+          echo "➡ Validating Python Environment"
+          python3 --version
+          pip3 --version
+
+          echo "➡ Checking required project files"
+          test -f pyproject.toml || test -f setup.py
+
+          echo "➡ Checking required directories"
+          test -d app
+          test -d tests
+
+          echo "➡ Checking requirements syntax (if exists)"
+          if [[ -f requirements.txt ]]; then
+            pip3 install -r requirements.txt --dry-run
+          fi
+
+          echo "✅ Preflight checks passed"
+        '''
+      }
+    }
+
     stage('Checkout Code') {
       steps {
         checkout scm
@@ -150,7 +152,6 @@ pipeline {
       }
     }
 
-    // ✅ NEW STAGE: Build Wheel + sdist
     stage('Build Package (Wheel + sdist)') {
       steps {
         sh '''#!/usr/bin/env bash
@@ -161,13 +162,9 @@ pipeline {
           echo "📦 Building package artifacts"
           echo "=============================="
 
-          # Clean previous outputs
           rm -rf dist/ build/ *.egg-info || true
 
-          # Ensure build tool exists (safe)
           python -m pip install --upgrade build
-
-          # Build sdist + wheel
           python -m build
 
           echo "✅ Built artifacts:"
@@ -179,11 +176,8 @@ pipeline {
 
   post {
     always {
-      // Keep your existing reports
       junit allowEmptyResults: true, testResults: 'report.xml'
       archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
-
-      // ✅ NEW: Archive package artifacts
       archiveArtifacts artifacts: 'dist/*', allowEmptyArchive: true
     }
   }
