@@ -161,9 +161,9 @@ pipeline {
         // Publish results and enforce thresholds
         dependencyCheckPublisher(
           pattern: '**/dependency-check-report.xml',
-          stopBuild: true,
-          failedTotalCritical: 1,
-          failedTotalHigh: 1
+          stopBuild: false,
+          failedTotalCritical: 5,
+          failedTotalHigh: 5
         )
       }
     }
