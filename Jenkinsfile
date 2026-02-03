@@ -292,7 +292,7 @@ pipeline {
 
           REGION_ARG=""
           if [[ -n "${AWS_REGION}" ]]; then
-            REGION_ARG="--region ${AWS_REGION}"
+            AWS_REGION_VALUE="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
           fi
 
           DEST="s3://${S3_BUCKET}/jenkins-builds/${JOB_NAME}/${BUILD_NUMBER}/"
